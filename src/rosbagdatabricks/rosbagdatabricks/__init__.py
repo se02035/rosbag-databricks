@@ -1,0 +1,1 @@
+from .rosschemas import ROSBAG_SCHEMA
