@@ -1,4 +1,4 @@
-from pyspark.sql.functions import col, broadcast, udf, regexp_replace, when, from_json, schema_of_json
+from pyspark.sql.functions import col, broadcast, udf, regexp_replace, when, from_json, schema_of_json, lit
 from pyspark.sql import Row
 from pyspark.sql.types import StructType, StringType
 from rosbagdatabricks.RosMessageLexer import RosMessageLexer
@@ -7,10 +7,9 @@ from rosbagdatabricks.RosMessageParserVisitor import RosMessageParserVisitor
 from rosbagdatabricks.RosMessageSchemaVisitor import RosMessageSchemaVisitor
 from rosbag.bag import _get_message_type
 from collections import namedtuple
-from antlr4 import *
 from . import ROSBAG_SCHEMA
 from rospy_message_converter import message_converter
-
+from antlr4 import InputStream, CommonTokenStream
 
 import os, json
 
@@ -26,32 +25,26 @@ def read_topics(rdd):
   return df.select('_2.header.topic').withColumn('topic', col('topic').cast('string')).distinct()
 
 def parse(df):
-  topics = df.select('topic')\
+  topics = df.select('topic', 'message_definition')\
            .distinct()\
            .withColumn('topic', regexp_replace(col('topic'), '/', '__'))
 
   columns = topics.collect()
 
-  msg_map_udf = udf(_msg_map, StringType())
   for column in columns:
+    msg_map_udf = udf(msg_map, _generate_struct(column[1]))
     df = df.withColumn(column[0], when(col('topic') == column[0].replace('__','/'), msg_map_udf(col('message_definition'), col('md5sum'), col('dtype'), col('data.msg_raw'))))
-
   return df
 
-
-def _rename_for_column_name(col):
-  return regexp_replace(col, '/', '__')
-
-def _msg_map(message_definition, md5sum, dtype, msg_raw):
+def msg_map(message_definition, md5sum, dtype, msg_raw):
   c = {'md5sum':md5sum, 'datatype':dtype, 'msg_def':message_definition }
   c = namedtuple('GenericDict', c.keys())(**c)
   
   msg_type = _get_message_type(c)
-  msg = msg_type()
-  msg.deserialize(msg_raw)
+  ros_msg = msg_type()
+  ros_msg.deserialize(msg_raw)
 
-  dictionary = message_converter.convert_ros_message_to_dictionary(msg)
-  return json.dumps(dictionary)
+  return ros_msg.msg
 
 def _generate_struct(message_definition):
   lexer = RosMessageLexer(InputStream(message_definition))
@@ -63,7 +56,14 @@ def _generate_struct(message_definition):
 
   struct_fields = []
   for f in visitor.fields:
-       struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'integer'})
+    if f[0] == 'data':
+      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'string'})
+    elif f[0] == 'id':
+      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'integer'})
+    elif f[0] == 'extended':
+      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'boolean'})
+    elif f[0] == 'dlc':
+      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'integer'})
 
   schema_dict = {
     'fields': struct_fields, 

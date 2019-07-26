@@ -65,7 +65,16 @@ def test_read_validrosbagrdd_returnsdataframe(spark, rdd):
     assert isinstance(result, DataFrame)
 
 def test_parse_validinputs_resultisnotempty(spark):
-    df = spark.read.parquet('data/0.1sec.parquet').limit(3)
+    df = spark.read.parquet('data/0.1sec.parquet').limit(1)
     result = rosbagdbks.parse(df)
-    foo = result.take(1).show()
-    assert result.count() != 0     
+    assert result.count() != 0
+
+def test_msg_map_validinputs_resultisnotnull():
+    message_definition_file = open('data/RosMessageDefinition','r')
+    message_definition = message_definition_file.read()
+    md5sum = '33747cb98e223cafb806d7e94cb4071f'
+    dtype = 'dataspeed_can_msgs/CanMessageStamped'
+    msg_raw = bytearray(b'\xe6\xea\x03\x00\xa8\x93/X\x84\xb1\x05\x00\x00\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x00\x00g\x00\x00\x00\x00\x01')
+
+    result = rosbagdbks.msg_map(message_definition, md5sum, dtype, msg_raw)
+    assert result != None
