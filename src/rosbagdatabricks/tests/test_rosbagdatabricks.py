@@ -1,4 +1,5 @@
 import pytest
+import os
 
 from rosbagdatabricks import rosbagdbks
 from pyspark.sql.types import StringType
@@ -7,6 +8,9 @@ from pyspark.sql.types import StructType
 
 @pytest.fixture
 def spark():
+    os.environ['PYSPARK_PYTHON'] = '/home/florian/anaconda3/envs/rosbag/bin/python'
+    os.environ['PYSPARK_DRIVER_PYTHON'] = '/home/florian/anaconda3/envs/rosbag/bin/python'
+    
     from pyspark.sql import SparkSession
 
     spark = SparkSession.builder\
@@ -60,13 +64,8 @@ def test_read_validrosbagrdd_returnsdataframe(spark, rdd):
     result = rosbagdbks.read(rdd)
     assert isinstance(result, DataFrame)
 
-def test_parse_msg_validinputs_returnsstructype():
-    message_definition_file = open('data/RosMessageDefinition', 'r')
-    message_definition = message_definition_file.read()
-    md5sum = '33747cb98e223cafb806d7e94cb4071f'
-    dtype = 'dataspeed_can_msgs/CanMessageStamped'
-    msg_raw = bytearray(b'\xe6\xea\x03\x00\xa8\x93/X\x84\xb1\x05\x00\x00\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x00\x00g\x00\x00\x00\x00\x01')
-
-    result = rosbagdbks.parse_msg(message_definition, md5sum, dtype, msg_raw)
-    assert True
-    
+def test_parse_validinputs_resultisnotempty(spark):
+    df = spark.read.parquet('data/0.1sec.parquet').limit(3)
+    result = rosbagdbks.parse(df)
+    foo = result.take(1).show()
+    assert result.count() != 0     

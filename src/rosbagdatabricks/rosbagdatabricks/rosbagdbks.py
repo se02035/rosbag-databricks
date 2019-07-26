@@ -1,16 +1,18 @@
-from pyspark.sql.functions import col, broadcast
+from pyspark.sql.functions import col, broadcast, udf, regexp_replace, when, from_json, schema_of_json
 from pyspark.sql import Row
-from pyspark.sql.types import StructType
+from pyspark.sql.types import StructType, StringType
 from rosbagdatabricks.RosMessageLexer import RosMessageLexer
 from rosbagdatabricks.RosMessageParser import RosMessageParser
 from rosbagdatabricks.RosMessageParserVisitor import RosMessageParserVisitor
 from rosbagdatabricks.RosMessageSchemaVisitor import RosMessageSchemaVisitor
 from rosbag.bag import _get_message_type
 from collections import namedtuple
-from . import ROSBAG_SCHEMA
 from antlr4 import *
+from . import ROSBAG_SCHEMA
+from rospy_message_converter import message_converter
 
-import os
+
+import os, json
 
 def read(rdd):
   df = rdd.filter(lambda r: r[1]['header'].get('op') ==  7 or 2) \
@@ -23,12 +25,22 @@ def read_topics(rdd):
   df = rdd.filter(lambda r: r[1]['header']['op'] == 7).toDF()
   return df.select('_2.header.topic').withColumn('topic', col('topic').cast('string')).distinct()
 
-def parse_msg(message_definition, md5sum, dtype, msg_raw):
-  struct = _generate_struct(message_definition)
-  msg = _msg_map(message_definition, md5sum, dtype, msg_raw)
+def parse(df):
+  topics = df.select('topic')\
+           .distinct()\
+           .withColumn('topic', regexp_replace(col('topic'), '/', '__'))
+
+  columns = topics.collect()
+
+  msg_map_udf = udf(_msg_map, StringType())
+  for column in columns:
+    df = df.withColumn(column[0], when(col('topic') == column[0].replace('__','/'), msg_map_udf(col('message_definition'), col('md5sum'), col('dtype'), col('data.msg_raw'))))
+
+  return df
 
 
-  return msg
+def _rename_for_column_name(col):
+  return regexp_replace(col, '/', '__')
 
 def _msg_map(message_definition, md5sum, dtype, msg_raw):
   c = {'md5sum':md5sum, 'datatype':dtype, 'msg_def':message_definition }
@@ -37,7 +49,9 @@ def _msg_map(message_definition, md5sum, dtype, msg_raw):
   msg_type = _get_message_type(c)
   msg = msg_type()
   msg.deserialize(msg_raw)
-  return msg
+
+  dictionary = message_converter.convert_ros_message_to_dictionary(msg)
+  return json.dumps(dictionary)
 
 def _generate_struct(message_definition):
   lexer = RosMessageLexer(InputStream(message_definition))
