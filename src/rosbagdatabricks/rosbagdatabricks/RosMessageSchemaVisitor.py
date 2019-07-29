@@ -3,11 +3,13 @@ from rosbagdatabricks.RosMessageParser import RosMessageParser
 
 
 class RosMessageSchemaVisitor(RosMessageParserVisitor):
-    fields = []
+    fields = {}
 
     def visitField_declaration(self, ctx):
         if not self._ancestorIsHeader(ctx):
-            self.fields.append((ctx.getChild(1).getText(), ctx.getChild(0).getText()))
+            field_name = ctx.getChild(1).getText()
+            field_type = ctx.getChild(0).getText()
+            self.fields[field_name] = field_type
 
     def _ancestorIsHeader(self, node):
         while(node.parentCtx):

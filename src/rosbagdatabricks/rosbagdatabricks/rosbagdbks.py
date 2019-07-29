@@ -1,6 +1,6 @@
-from pyspark.sql.functions import col, broadcast, udf, regexp_replace, when, from_json, schema_of_json, lit
+from pyspark.sql.functions import col, broadcast, udf, regexp_replace, when, from_json, schema_of_json, lit, array
 from pyspark.sql import Row
-from pyspark.sql.types import StructType, StringType
+from pyspark.sql.types import *
 from rosbagdatabricks.RosMessageLexer import RosMessageLexer
 from rosbagdatabricks.RosMessageParser import RosMessageParser
 from rosbagdatabricks.RosMessageParserVisitor import RosMessageParserVisitor
@@ -10,8 +10,9 @@ from collections import namedtuple
 from . import ROSBAG_SCHEMA
 from rospy_message_converter import message_converter
 from antlr4 import InputStream, CommonTokenStream
+from rospy_message_converter import message_converter
 
-import os, json
+import os, json, re
 
 def read(rdd):
   df = rdd.filter(lambda r: r[1]['header'].get('op') ==  7 or 2) \
@@ -32,11 +33,18 @@ def parse(df):
   columns = topics.collect()
 
   for column in columns:
-    msg_map_udf = udf(msg_map, _generate_struct(column[1]))
-    df = df.withColumn(column[0], when(col('topic') == column[0].replace('__','/'), msg_map_udf(col('message_definition'), col('md5sum'), col('dtype'), col('data.msg_raw'))))
+    struct = _convert_ros_definition_to_struct(column[1])
+    msg_map_udf = udf(msg_map, struct)
+    df = df.withColumn(column[0], 
+                        when(col('topic') == column[0].replace('__','/'), 
+                          msg_map_udf(col('message_definition'), 
+                                      col('md5sum'), 
+                                      col('dtype'), 
+                                      col('data.msg_raw'),
+                                      array([lit(f) for f in struct.fieldNames()]))))
   return df
 
-def msg_map(message_definition, md5sum, dtype, msg_raw):
+def msg_map(message_definition, md5sum, dtype, msg_raw, field_names):
   c = {'md5sum':md5sum, 'datatype':dtype, 'msg_def':message_definition }
   c = namedtuple('GenericDict', c.keys())(**c)
   
@@ -44,32 +52,54 @@ def msg_map(message_definition, md5sum, dtype, msg_raw):
   ros_msg = msg_type()
   ros_msg.deserialize(msg_raw)
 
-  return ros_msg.msg
+  result = {}
+  for field_name in field_names:
+    result[field_name] = getattr(ros_msg.msg, field_name)
 
-def _generate_struct(message_definition):
-  lexer = RosMessageLexer(InputStream(message_definition))
+  return result
+
+ros_binary_types_regexp = re.compile(r'(uint8|char)\[[^\]]*\]')
+
+def _convert_ros_definition_to_struct(message_definition):
+  input_stream = InputStream(message_definition)
+  lexer = RosMessageLexer(InputStream(input_stream))
   stream = CommonTokenStream(lexer)
   parser = RosMessageParser(stream)
   tree = parser.rosbag_input()
   visitor = RosMessageSchemaVisitor()
   visitor.visit(tree)
 
-  struct_fields = []
-  for f in visitor.fields:
-    if f[0] == 'data':
-      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'string'})
-    elif f[0] == 'id':
-      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'integer'})
-    elif f[0] == 'extended':
-      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'boolean'})
-    elif f[0] == 'dlc':
-      struct_fields.append({'metadata': {}, 'name': f[0], 'nullable': True, 'type': 'integer'})
+  struct = StructType()
 
-  schema_dict = {
-    'fields': struct_fields, 
-    'type': 'struct'
-  }
-  return StructType.fromJson(schema_dict)
+  for field_name, field_type in visitor.fields.iteritems():
+    struct.add(field_name, _convert_to_python_type(field_type), True)
+  
+  visitor.fields.clear()
+  return struct
+
+ros_type_to_pyspark_map = {
+  'bool': 'boolean',
+  'int8': 'integer',
+  'uint8': 'integer',
+  'int16': 'integer',
+  'uint16': 'integer',
+  'int32': 'integer',
+  'uint32': 'integer',
+  'int64': 'long',
+  'uint64': 'long',
+  'float32': 'float',
+  'float64': 'float',
+  'string': 'string'
+}
+
+def _convert_to_python_type(field_type):
+  if (_is_ros_binary_type(field_type)):
+    return 'binary'
+  else:
+    return ros_type_to_pyspark_map[field_type]
+
+def _is_ros_binary_type(field_type):
+  return re.search(ros_binary_types_regexp, field_type) is not None
 
 def _convert_to_row(rid, opid, connid, dheader, ddata):
   result_data = {}
