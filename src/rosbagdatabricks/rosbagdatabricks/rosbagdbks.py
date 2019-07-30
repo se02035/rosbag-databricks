@@ -27,36 +27,40 @@ def read_topics(rdd):
 
 def parse(df):
   topics = df.select('topic', 'message_definition')\
-           .distinct()\
-           .withColumn('topic', regexp_replace(col('topic'), '/', '__'))
+           .distinct()
 
   columns = topics.collect()
 
+  mock_header = StructType().add('seq', IntegerType(), True)\
+                            .add('frame_id', StringType(), True)
+  mock_msg = StructType().add('data', BinaryType(), True)\
+                         .add('id', IntegerType(), True)\
+                         .add('extended', BooleanType(), True)\
+                         .add('dlc', IntegerType(), True)
+  mock_struct = StructType().add('header', mock_header, True)\
+                            .add('msg', mock_msg, True)  
+
   for column in columns:
-    struct = _convert_ros_definition_to_struct(column[1])
+    #struct = _convert_ros_definition_to_struct(column[1])
+    struct = mock_struct
     msg_map_udf = udf(msg_map, struct)
     df = df.withColumn(column[0], 
-                        when(col('topic') == column[0].replace('__','/'), 
+                        when(col('topic') == column[0], 
                           msg_map_udf(col('message_definition'), 
                                       col('md5sum'), 
                                       col('dtype'), 
-                                      col('data.msg_raw'),
-                                      array([lit(f) for f in struct.fieldNames()]))))
+                                      col('data.msg_raw'))))
   return df
 
-def msg_map(message_definition, md5sum, dtype, msg_raw, field_names):
+def msg_map(message_definition, md5sum, dtype, msg_raw):
   c = {'md5sum':md5sum, 'datatype':dtype, 'msg_def':message_definition }
   c = namedtuple('GenericDict', c.keys())(**c)
-  
+
   msg_type = _get_message_type(c)
   ros_msg = msg_type()
   ros_msg.deserialize(msg_raw)
 
-  result = {}
-  for field_name in field_names:
-    result[field_name] = getattr(ros_msg.msg, field_name)
-
-  return result
+  return message_converter.convert_ros_message_to_dictionary(ros_msg)
 
 ros_binary_types_regexp = re.compile(r'(uint8|char)\[[^\]]*\]')
 

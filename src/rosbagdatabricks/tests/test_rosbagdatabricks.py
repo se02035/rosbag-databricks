@@ -65,17 +65,17 @@ def test_read_validrosbagrdd_returnsdataframe(spark, rdd):
     assert isinstance(result, DataFrame)
 
 def test_parse_validinputs_resultisnotempty(spark):
-    df = spark.read.parquet('data/0.1sec.parquet').limit(2)
+    df = spark.read.parquet('data/0.1sec.parquet').limit(1)
     result = rosbagdbks.parse(df)
     result.collect()
     assert result.count() != 0
+    assert result.filter('`/can_bus_dbw/can_rx`.msg.dlc is not null').count() > 0
 
 def test_parse_validinputs_resultstructiscomplete(spark):
     df = spark.read.parquet('data/0.1sec.parquet').limit(1)
     result = rosbagdbks.parse(df)
     result.collect()
-    assert len(result.select('__can_bus_dbw__can_rx').fieldNames()) == 4
-
+    assert len(result.select('/can_bus_dbw/can_rx').fieldNames()) == 4
 
 def test_msg_map_validinputs_resultisnotnull():
     message_definition_file = open('data/RosMessageDefinition','r')
@@ -83,9 +83,8 @@ def test_msg_map_validinputs_resultisnotnull():
     md5sum = '33747cb98e223cafb806d7e94cb4071f'
     dtype = 'dataspeed_can_msgs/CanMessageStamped'
     msg_raw = bytearray(b'\xe6\xea\x03\x00\xa8\x93/X\x84\xb1\x05\x00\x00\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x00\x00g\x00\x00\x00\x00\x01')
-    field_names = ['data', 'id', 'extended', 'dlc']
 
-    result = rosbagdbks.msg_map(message_definition, md5sum, dtype, msg_raw, field_names)
+    result = rosbagdbks.msg_map(message_definition, md5sum, dtype, msg_raw)
     assert result != None
 
 def test_msg_map_gearreport_resultisnotnull():
@@ -94,7 +93,6 @@ def test_msg_map_gearreport_resultisnotnull():
     md5sum = 'f33342dfeb80c29d8fe4b31e22519594'
     dtype = 'dbw_mkz_msgs/GearReport'
     msg_raw = bytearray(b'6\x1c\x00\x00\xa8\x93/X\x84\xb1\x05\x00\x00\x00\x00\x00\x04\x00\x01\x00')
-    field_names = ['gear']
 
-    result = rosbagdbks.msg_map(message_definition, md5sum, dtype, msg_raw, field_names)
+    result = rosbagdbks.msg_map(message_definition, md5sum, dtype, msg_raw)
     assert result != None
