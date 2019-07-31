@@ -31,18 +31,18 @@ def parse(df):
 
   columns = topics.collect()
 
-  mock_header = StructType().add('seq', IntegerType(), True)\
-                            .add('frame_id', StringType(), True)
-  mock_msg = StructType().add('data', BinaryType(), True)\
-                         .add('id', IntegerType(), True)\
-                         .add('extended', BooleanType(), True)\
-                         .add('dlc', IntegerType(), True)
-  mock_struct = StructType().add('header', mock_header, True)\
-                            .add('msg', mock_msg, True)  
-
+  #mock_header = StructType().add('seq', IntegerType(), True)\
+  #                          .add('frame_id', StringType(), True)
+  #mock_msg = StructType().add('data', BinaryType(), True)\
+  #                       .add('id', IntegerType(), True)\
+  #                       .add('extended', BooleanType(), True)\
+  #                       .add('dlc', IntegerType(), True)
+  #mock_struct = StructType().add('header', mock_header, True)\
+  #                          .add('msg', mock_msg, True)  
+#
   for column in columns:
-    #struct = _convert_ros_definition_to_struct(column[1])
-    struct = mock_struct
+    struct = self.convert_ros_definition_to_struct(column[1])
+    #struct = mock_struct
     msg_map_udf = udf(msg_map, struct)
     df = df.withColumn(column[0], 
                         when(col('topic') == column[0], 
@@ -64,21 +64,21 @@ def msg_map(message_definition, md5sum, dtype, msg_raw):
 
 ros_binary_types_regexp = re.compile(r'(uint8|char)\[[^\]]*\]')
 
-def _convert_ros_definition_to_struct(message_definition):
+def convert_ros_definition_to_struct(message_definition):
   input_stream = InputStream(message_definition)
   lexer = RosMessageLexer(InputStream(input_stream))
   stream = CommonTokenStream(lexer)
   parser = RosMessageParser(stream)
   tree = parser.rosbag_input()
   visitor = RosMessageSchemaVisitor()
-  visitor.visit(tree)
+  struct = visitor.visitRosbag_input(tree)
 
-  struct = StructType()
-
-  for field_name, field_type in visitor.fields.iteritems():
-    struct.add(field_name, _convert_to_python_type(field_type), True)
-  
-  visitor.fields.clear()
+  #struct = StructType()
+#
+  #for field_name, field_type in visitor.fields.iteritems():
+  #  struct.add(field_name, _convert_to_python_type(field_type), True)
+  #
+  #visitor.fields.clear()
   return struct
 
 ros_type_to_pyspark_map = {

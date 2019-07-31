@@ -73,8 +73,10 @@ def test_parse_validinputs_resultisnotempty(spark):
 
 def test_parse_validinputs_resultstructiscomplete(spark):
     df = spark.read.parquet('data/0.1sec.parquet').limit(1)
+
     result = rosbagdbks.parse(df)
     result.collect()
+
     assert len(result.select('/can_bus_dbw/can_rx').fieldNames()) == 4
 
 def test_msg_map_validinputs_resultisnotnull():
@@ -85,6 +87,7 @@ def test_msg_map_validinputs_resultisnotnull():
     msg_raw = bytearray(b'\xe6\xea\x03\x00\xa8\x93/X\x84\xb1\x05\x00\x00\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x00\x00g\x00\x00\x00\x00\x01')
 
     result = rosbagdbks.msg_map(message_definition, md5sum, dtype, msg_raw)
+
     assert result != None
 
 def test_msg_map_gearreport_resultisnotnull():
@@ -95,4 +98,15 @@ def test_msg_map_gearreport_resultisnotnull():
     msg_raw = bytearray(b'6\x1c\x00\x00\xa8\x93/X\x84\xb1\x05\x00\x00\x00\x00\x00\x04\x00\x01\x00')
 
     result = rosbagdbks.msg_map(message_definition, md5sum, dtype, msg_raw)
+
     assert result != None
+
+def test_convert_ros_definition_to_struct_hasfields():
+    message_definition_file = open('data/RosMessageDefinition','r')
+    message_definition = message_definition_file.read()
+
+    result = rosbagdbks.convert_ros_definition_to_struct(message_definition)
+
+    assert result.fieldNames()
+    assert 'msg' in result.fieldNames()
+    assert 'header' in result.fieldNames()
