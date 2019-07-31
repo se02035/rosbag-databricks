@@ -8,11 +8,10 @@ from rosbagdatabricks.RosMessageSchemaVisitor import RosMessageSchemaVisitor
 from rosbag.bag import _get_message_type
 from collections import namedtuple
 from . import ROSBAG_SCHEMA
-from rospy_message_converter import message_converter
 from antlr4 import InputStream, CommonTokenStream
 from rospy_message_converter import message_converter
 
-import os, json, re
+import os, json
 
 def read(rdd):
   df = rdd.filter(lambda r: r[1]['header'].get('op') ==  7 or 2) \
@@ -30,19 +29,8 @@ def parse(df):
            .distinct()
 
   columns = topics.collect()
-
-  #mock_header = StructType().add('seq', IntegerType(), True)\
-  #                          .add('frame_id', StringType(), True)
-  #mock_msg = StructType().add('data', BinaryType(), True)\
-  #                       .add('id', IntegerType(), True)\
-  #                       .add('extended', BooleanType(), True)\
-  #                       .add('dlc', IntegerType(), True)
-  #mock_struct = StructType().add('header', mock_header, True)\
-  #                          .add('msg', mock_msg, True)  
-#
   for column in columns:
-    struct = self.convert_ros_definition_to_struct(column[1])
-    #struct = mock_struct
+    struct = convert_ros_definition_to_struct(column[1])
     msg_map_udf = udf(msg_map, struct)
     df = df.withColumn(column[0], 
                         when(col('topic') == column[0], 
@@ -62,7 +50,6 @@ def msg_map(message_definition, md5sum, dtype, msg_raw):
 
   return message_converter.convert_ros_message_to_dictionary(ros_msg)
 
-ros_binary_types_regexp = re.compile(r'(uint8|char)\[[^\]]*\]')
 
 def convert_ros_definition_to_struct(message_definition):
   input_stream = InputStream(message_definition)
@@ -73,37 +60,7 @@ def convert_ros_definition_to_struct(message_definition):
   visitor = RosMessageSchemaVisitor()
   struct = visitor.visitRosbag_input(tree)
 
-  #struct = StructType()
-#
-  #for field_name, field_type in visitor.fields.iteritems():
-  #  struct.add(field_name, _convert_to_python_type(field_type), True)
-  #
-  #visitor.fields.clear()
   return struct
-
-ros_type_to_pyspark_map = {
-  'bool': 'boolean',
-  'int8': 'integer',
-  'uint8': 'integer',
-  'int16': 'integer',
-  'uint16': 'integer',
-  'int32': 'integer',
-  'uint32': 'integer',
-  'int64': 'long',
-  'uint64': 'long',
-  'float32': 'float',
-  'float64': 'float',
-  'string': 'string'
-}
-
-def _convert_to_python_type(field_type):
-  if (_is_ros_binary_type(field_type)):
-    return 'binary'
-  else:
-    return ros_type_to_pyspark_map[field_type]
-
-def _is_ros_binary_type(field_type):
-  return re.search(ros_binary_types_regexp, field_type) is not None
 
 def _convert_to_row(rid, opid, connid, dheader, ddata):
   result_data = {}
