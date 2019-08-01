@@ -65,15 +65,15 @@ def test_read_validrosbagrdd_returnsdataframe(spark, rdd):
     assert isinstance(result, DataFrame)
 
 def test_parse_validinputs_resultisnotempty(spark):
-    df = spark.read.parquet('data/0.1sec.parquet').limit(1)
+    df = spark.read.parquet('data/0.1sec.parquet')
     result = rosbagdbks.parse(df)
     result.collect()
     assert result.count() != 0
     assert result.filter('`/can_bus_dbw/can_rx`.msg.dlc is not null').count() > 0
-    assert result.filter('`/can_bus_dbw/can_rx`.header.stamp.sec is not null').count() > 0
+    #assert result.filter('`/can_bus_dbw/can_rx`.header.stamp.sec is not null').count() > 0
 
 def test_parse_validinputs_resultstructiscomplete(spark):
-    df = spark.read.parquet('data/0.1sec.parquet').limit(1)
+    df = spark.read.parquet('data/0.1sec.parquet').limit(5)
 
     result = rosbagdbks.parse(df)
     result.collect()
@@ -103,7 +103,7 @@ def test_msg_map_gearreport_resultisnotnull():
     assert result != None
 
 def test_convert_ros_definition_to_struct_hasfields():
-    message_definition_file = open('data/RosMessageDefinition_Quaternion','r')
+    message_definition_file = open('data/RosMessageDefinition_Nested','r')
     message_definition = message_definition_file.read()
 
     result = rosbagdbks.convert_ros_definition_to_struct(message_definition)

@@ -5,6 +5,8 @@ from rosbagdatabricks.RosMessageLexer import RosMessageLexer
 from rosbagdatabricks.RosMessageParser import RosMessageParser
 from rosbagdatabricks.RosMessageParserVisitor import RosMessageParserVisitor
 from rosbagdatabricks.RosMessageSchemaVisitor import RosMessageSchemaVisitor
+from rosbagdatabricks.RosMessageNestedSchemaVisitor import RosMessageNestedSchemaVisitor
+from rosbagdatabricks.RosMessageStructVisitor import RosMessageStructVisitor
 from rosbag.bag import _get_message_type
 from collections import namedtuple
 from . import ROSBAG_SCHEMA
@@ -52,13 +54,20 @@ def msg_map(message_definition, md5sum, dtype, msg_raw):
 
 
 def convert_ros_definition_to_struct(message_definition):
+
   input_stream = InputStream(message_definition)
   lexer = RosMessageLexer(InputStream(input_stream))
   stream = CommonTokenStream(lexer)
   parser = RosMessageParser(stream)
   tree = parser.rosbag_input()
-  visitor = RosMessageSchemaVisitor()
-  struct = visitor.visitRosbag_input(tree)
+
+  schema_visitor = RosMessageSchemaVisitor()
+  nested_schema_visitor = RosMessageNestedSchemaVisitor()
+
+  schema = schema_visitor.visitRosbag_input(tree)
+  nested_schema = nested_schema_visitor.visitRosbag_input(tree)
+  
+  #struct = struct_visitor.visitRosbag_input(tree, schema, nested_schema)
 
   return struct
 
