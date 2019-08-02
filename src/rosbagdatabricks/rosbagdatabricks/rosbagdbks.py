@@ -13,7 +13,7 @@ from . import ROSBAG_SCHEMA
 from antlr4 import InputStream, CommonTokenStream
 from rospy_message_converter import message_converter
 
-import os, json
+import os, json, re
 
 def read(rdd):
   df = rdd.filter(lambda r: r[1]['header'].get('op') ==  7 or 2) \
@@ -32,6 +32,10 @@ def parse(df):
 
   columns = topics.collect()
   for column in columns:
+    #file = open('output.txt', 'w')
+    #file.write(column[0])
+    #file.close()
+
     struct = convert_ros_definition_to_struct(column[1])
     msg_map_udf = udf(msg_map, struct)
     df = df.withColumn(column[0], 
@@ -67,9 +71,71 @@ def convert_ros_definition_to_struct(message_definition):
   schema = schema_visitor.visitRosbag_input(tree)
   nested_schema = nested_schema_visitor.visitRosbag_input(tree)
   
-  #struct = struct_visitor.visitRosbag_input(tree, schema, nested_schema)
-
+  struct = _create_struct_from_schema(schema, nested_schema)
   return struct
+
+def _create_struct_from_schema(fields, nested_schema):
+  struct = StructType()
+  for field_type, field_name in fields.items():
+    spark_type = _convert_to_spark_type(field_type, nested_schema)
+    struct.add(field_name, spark_type, True)
+  return struct
+
+def _convert_to_spark_type(field_type, nested_schema):
+  
+  if _extract_type_from_arraytype(field_type) in nested_schema.keys():
+    nested_fields_array = nested_schema[_extract_type_from_arraytype(field_type)]
+
+    struct = StructType()    
+    for nested_field in nested_fields_array:
+      nested_field_name = nested_field.values()[0]
+      nested_field_type = nested_field.keys()[0]
+      nested_struct = _convert_to_spark_type(nested_field_type, nested_schema)
+      struct.add(nested_field_name, nested_struct, True)
+    if _is_field_type_an_array(field_type):
+      return ArrayType(struct)
+    else:
+      return struct
+  else:
+    return _map_ros_type_to_struct_type(field_type)
+
+ros_type_to_spark_type_map = {
+  'bool': BooleanType,
+  'int8': IntegerType,
+  'uint8': IntegerType,
+  'int16': IntegerType,
+  'uint16': IntegerType,
+  'int32': IntegerType,
+  'uint32': IntegerType,
+  'int64': LongType,
+  'uint64': LongType,
+  'float32': FloatType,
+  'float64': FloatType,
+  'string': StringType,
+  'time': IntegerType,
+  'byte': BinaryType
+}
+
+def _extract_type_from_arraytype(ros_type):
+  list_brackets = re.compile(r'\[[^\]]*\]')
+  return list_brackets.sub('', ros_type)
+
+def _map_ros_type_to_struct_type(ros_type):
+  if(_is_ros_binary_type(ros_type)):
+    return BinaryType()
+  elif (_is_field_type_an_array(ros_type)):
+    list_type = _extract_type_from_arraytype(ros_type)
+    return ArrayType(_map_ros_type_to_struct_type(list_type))
+  else:
+    return ros_type_to_spark_type_map[ros_type]()
+
+def _is_ros_binary_type(ros_type):
+  ros_binary_types_regexp = re.compile(r'(uint8|char)\[[^\]]*\]')
+  return re.search(ros_binary_types_regexp, ros_type) is not None
+
+def _is_field_type_an_array(ros_type):
+  list_brackets = re.compile(r'\[[^\]]*\]')
+  return list_brackets.search(ros_type) is not None
 
 def _convert_to_row(rid, opid, connid, dheader, ddata):
   result_data = {}

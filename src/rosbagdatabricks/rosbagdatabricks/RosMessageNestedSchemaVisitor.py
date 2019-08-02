@@ -21,7 +21,7 @@ class RosMessageNestedSchemaVisitor(RosMessageParserVisitor):
 
             if isinstance(c, RosMessageParser.Rosbag_nested_messageContext):
                 nested_message_identifier = c.getChild(1).getText().split('/')[-1]
-                childResult = self.visitChildren(c)
+                childResult = self.visitRosMessageChildren(c)
 
                 result = self.aggregateDictionaryResult(result, childResult, nested_message_identifier)
     
@@ -31,16 +31,18 @@ class RosMessageNestedSchemaVisitor(RosMessageParserVisitor):
         aggregate.update({nested_message_identifier: nextResult})
         return aggregate
 
-    def defaultResult(self):
-        return []
-
-    def aggregateResult(self, aggregate, nextResult):
-        if nextResult:
-            aggregate.append(nextResult)
-        return aggregate
+    def visitRosMessageChildren(self, node):
+        result = None
+        n = node.getChildCount()
+        for i in range(n):
+            c = node.getChild(i)
+            childResult = self.visitFieldDeclarationChildren(c)
     
-    def visitChildren(self, node):
-        result = self.defaultResult()
+        return childResult
+
+
+    def visitFieldDeclarationChildren(self, node):
+        result = []
         n = node.getChildCount()
         for i in range(n):
             if not self.shouldVisitNextChild(node, result):
@@ -48,9 +50,14 @@ class RosMessageNestedSchemaVisitor(RosMessageParserVisitor):
 
             c = node.getChild(i)
             childResult = c.accept(self)
-            result = self.aggregateResult(result, childResult)
-
+            result = self.aggregateArrayResult(result, childResult)
+    
         return result
+
+    def aggregateArrayResult(self, aggregate, nextResult):
+        if nextResult:
+            aggregate.append(nextResult)
+        return aggregate
 
     def visitField_declaration(self, node):
         return { node.getChild(0).getText().split('/')[-1]: node.getChild(1).getText()}
