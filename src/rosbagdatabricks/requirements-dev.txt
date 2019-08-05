@@ -2,3 +2,4 @@ pip
 wheel
 pytest
 pytest-runner
+antlr4-python2-runtime
