@@ -15,7 +15,6 @@ echo "source /opt/ros/melodic/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 
 # ATTENTION: in conda: don't use the global PIP (with an updated PYTHONPATH. wont work)
-# replace the path of PIP with the correct conda/virtenv path
 # also don't use the apt-get installation as it will put the rospkg outside of the virtual env
 python -m pip install -U rospkg 
 
@@ -35,5 +34,5 @@ conda install -c anaconda pytest
 # ROSBAG DATABRICKS LIBRARY
 #====================================
 
-cd ./src/rosbagdatabricks
+cd ./rosbagdatabricks
 python -m pip install -U . 
