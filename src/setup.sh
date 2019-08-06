@@ -35,4 +35,7 @@ conda install -c anaconda pytest
 #====================================
 
 cd ./rosbagdatabricks
+
+python -m pip install -r requirements-dev.txt
+
 python -m pip install -U . 
