@@ -32,13 +32,13 @@ def df(spark):
     d = [{'ts': 1, 'id_2': 'test'}, {'ts': 2, 'id': 109}, {'ts': 3, 'id_2': 'test2'}, {'ts': 4, 'id': 110, 'id_2': 'test3'}, {'ts': 5},  {'ts': 6, 'id_2': 'test4'}]
     return spark.createDataFrame(d)
 
-def test_create_sample_df(spark, df):
-    result = dataalignment.fill(df, 'ts', ['id', 'id_2'])
+def test_forwardfill_df_successfully(spark, df):
+    result = dataalignment.fill(df, 'ts', ['id', 'id_2'], strategy=dataalignment.ffill_windows)
     
     #debug
     df.show()
     result.show()
-    
+
     assert result.count() == df.count()
 
 
