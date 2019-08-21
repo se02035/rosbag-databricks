@@ -8,10 +8,22 @@ from pyspark.sql.types import StructType
 @pytest.fixture
 def spark():
     from pyspark.sql import SparkSession
+    import os
+    import sys
 
+    # ensure the PYSPARK Python version on the workers
+    # matches the Python version on the driver
+    # can be tricky when using virtual envs / conda
+    PYSPARK_PYTHON_WORKER = 'python2'
+    IS_PY2 = sys.version_info < (3,)
+    if not IS_PY2:
+        PYSPARK_PYTHON_WORKER = 'python3'  
+    os.environ['PYSPARK_PYTHON'] = PYSPARK_PYTHON_WORKER
+
+    # create spark session
     spark = SparkSession.builder\
         .master('local[2]')\
-        .config('spark.jars', 'lib/protobuf-java-3.3.0.jar,lib/rosbaginputformat_2.11-0.9.8.jar,lib/scala-library-2.11.8.jar')\
+        .config('spark.jars', 'src/rosbagdatabricks/lib/protobuf-java-3.3.0.jar,src/rosbagdatabricks/lib/rosbaginputformat_2.11-0.9.8.jar,src/rosbagdatabricks/lib/scala-library-2.11.8.jar')\
         .appName('Unit Testing')\
         .getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
@@ -20,11 +32,11 @@ def spark():
 @pytest.fixture
 def rdd(spark):
     return spark.sparkContext.newAPIHadoopFile(
-        path = 'data/0.1sec.bag',
+        path = 'src/rosbagdatabricks/data/0.1sec.bag',
         inputFormatClass = 'de.valtech.foss.RosbagMapInputFormat',
         keyClass = 'org.apache.hadoop.io.LongWritable',
         valueClass = 'org.apache.hadoop.io.MapWritable',
-        conf = {'RosbagInputFormat.chunkIdx':'data/0.1sec.bag.idx.bin'}
+        conf = {'RosbagInputFormat.chunkIdx':'src/rosbagdatabricks/data/0.1sec.bag.idx.bin'}
     )
 
 def test_read_topics_validrosbagrdd_resultcontainsrows(spark, rdd):
@@ -61,7 +73,7 @@ def test_read_validrosbagrdd_returnsdataframe(spark, rdd):
     assert isinstance(result, DataFrame)
 
 def test_parse_msg_validinputs_returnsstructype():
-    message_definition_file = open('data/RosMessageDefinition', 'r')
+    message_definition_file = open('src/rosbagdatabricks/data/RosMessageDefinition', 'r')
     message_definition = message_definition_file.read()
     md5sum = '33747cb98e223cafb806d7e94cb4071f'
     dtype = 'dataspeed_can_msgs/CanMessageStamped'
