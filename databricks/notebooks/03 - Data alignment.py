@@ -1,12 +1,17 @@
 # Databricks notebook source
-# MAGIC %md #Time-Series analysis with Flint
+# MAGIC %md #Time-Series alignment with Flint
 # MAGIC https://github.com/twosigma/flint
+# MAGIC 
+# MAGIC In a typical IoT scenario you'll find many different data producers (called sensors) which produce different data (e.g. telemetry data, image data, etc) at different frequencies (<1Hz, KHz or MHz). This difference in frequencies makes it difficult to run real analytics on top of the existing data. It is hard to extract that that depend on multiple sensor values e.g. I want all the images when the car's autonomous driving mode was on, the car was driving at a certain speed and there were yellow school buses on the front camera's images. To be able to run this kind of query efficiently requires a couple of things:
+# MAGIC - **Time-align the different sensor values**: 
+# MAGIC - **Pivot the data**:
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
-# MAGIC There are a couple of issues around Flint on Databricks. Use the following custom JAR from here (instead of the one published on Maven): https://github.com/databricks/databricks-accelerators/tree/master/projects/databricks-flint
+# MAGIC **ATTENTION:**
+# MAGIC - Flint supports Python 3.5+
+# MAGIC - There are a couple of issues around Flint on Databricks. Use the following custom JAR from here (instead of the one published on Maven): https://github.com/databricks/databricks-accelerators/tree/master/projects/databricks-flint
 
 # COMMAND ----------
 
@@ -24,10 +29,10 @@ spark.conf.set("spark.databricks.io.cache.enabled", "true")
 # COMMAND ----------
 
 #input data
-SOURCE_PARQUET = "dbfs:/mnt/rosdata/parquet_prepared"
+SOURCE_PARQUET = "dbfs:/mnt/rosdata/02-parquet_prepared"
 
 #output data
-DESTINATION_PARQUET = "dbfs:/mnt/rosdata/parquet_timealigned"
+DESTINATION_PARQUET = "dbfs:/mnt/rosdata/03-parquet_timealigned"
 
 # COMMAND ----------
 
@@ -61,6 +66,11 @@ sensor_df = spark.read.parquet(SOURCE_PARQUET) \
   .select(col("tstamp").alias("time"), col("record_id"), col("topic").alias("sensorid"), col("payload.msg").alias("value"))
 
 sensor_df.createOrReplaceTempView("sensor_data")
+
+# COMMAND ----------
+
+# MAGIC %sql 
+# MAGIC SELECT * FROM sensor_data WHERE sensorid in ("/vehicle/fuel_level_report", "/vehicle/brake_info_report", "/vehicle/throttle_info_report", "/vehicle/wheel_speed_report")
 
 # COMMAND ----------
 
@@ -282,11 +292,12 @@ print("Time elapsed > " + str(stopwatch_end-stopwatch_start))
 # COMMAND ----------
 
 from pyspark.sql.functions import schema_of_json
+import pyspark.sql.functions as f
 import json
 
 def get_schema_from_json(col_name):
-  # get the json string and remove the header values
-  json_typed = json.loads(pivotted_df.select(col_name).first()[0])
+  # get the json string and remove the header values - ensure the value isn't null
+  json_typed = json.loads(pivotted_df.select(first(col_name, ignorenulls=True)).first()[0])
   del json_typed['header']
 
   # create the schema
@@ -294,7 +305,7 @@ def get_schema_from_json(col_name):
 
 # COMMAND ----------
 
-from pyspark.sql.functions import lit
+from pyspark.sql.functions import from_json, lit
 
 #get all columns (json payload) expect the first (time column)
 columnsTomap = pivotted_df.columns[1:]
@@ -305,3 +316,6 @@ for json_col in columnsTomap:
 # COMMAND ----------
 
 pivotted_df.write.mode("overwrite").parquet(DESTINATION_PARQUET)
+
+# COMMAND ----------
+
