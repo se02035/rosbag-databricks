@@ -1,8 +1,5 @@
 import pytest
-from pyspark.sql.context import SQLContext
-from timeserieshelper import dataalignment
-
-from ts.flint import *
+from timeserieshelper import dataalignment as da
 
 @pytest.fixture
 def spark():
@@ -43,19 +40,13 @@ def df(spark):
         
     return spark.createDataFrame(d)
 
-def test_dau_initialization_no_sqlcontext_fails(spark, df):
-    with pytest.raises(TypeError):
-        uat = dataalignment.DataAlignmentUtil()
-
-def test_dau_initialization_wrong_sqlcontext_type_fails(spark, df):
-    with pytest.raises(TypeError):
-        uat = dataalignment.DataAlignmentUtil(spark.sparkContext)
-
 def test_fill_forwardfill_correct_number_of_null_successfully(spark, df):
     from pyspark.sql.functions import isnan, when, count, col
 
-    uat = dataalignment.DataAlignmentUtil(SQLContext.getOrCreate(spark.sparkContext))
-    result = uat.fill(df, 'time', ['id_2'], strategy=uat.ffill_windows)
+    columns_to_fill = ['id_2']
+    columns_with_new_names = list(zip(columns_to_fill, columns_to_fill))
+
+    result = da.Filler.fill(df, 'time', columns_with_new_names, strategy=da.Filler.ffill_windows)
     
     row_null_count_df = df.select([count(when(col(c).isNull(), c)).alias(c) for c in df.columns]).collect()[0]
     row_null_count_result = result.select([count(when(col(c).isNull(), c)).alias(c) for c in result.columns]).collect()[0]
@@ -73,9 +64,39 @@ def test_fill_forwardfill_correct_number_of_null_successfully(spark, df):
     assert row_null_count_result[2] > 0 # id - not filled
     assert row_null_count_result[2] == row_null_count_df[2] # nulls but not filled. same like test df
 
-def test_fill_forwardfill_df_successfully(spark, df):
-    uat = dataalignment.DataAlignmentUtil(SQLContext.getOrCreate(spark.sparkContext))
-    result = uat.fill(df, 'time', ['id', 'id_2'], strategy=uat.ffill_windows)
+def test_da_filler_fill_with_no_new_col_names_provided_successfully(spark, df):
+
+    columns_to_fill = ['id', 'id_2']
+    columns_with_new_names = list(map(lambda x: (x, None), columns_to_fill))
+
+    result = da.Filler.fill(df, 'time', columns_with_new_names, strategy=da.Filler.ffill_windows)
+    
+    #debug
+    df.show()
+    result.show()
+
+    assert len(result.columns) == len(df.columns)
+
+def test_da_filler_fill_with_new_col_names_provided_successfully(spark, df):
+
+    columns_to_fill = ['id', 'id_2']
+    new_column_names = ['id_filled', 'id_2_filled']
+    columns_with_new_names = list(zip(columns_to_fill, new_column_names))
+
+    result = da.Filler.fill(df, 'time', columns_with_new_names, strategy=da.Filler.ffill_windows)
+    
+    #debug
+    df.show()
+    result.show()
+
+    assert len(result.columns) == len(df.columns) + len(new_column_names)
+
+def _test_da_filler_fill_forwardfill_df_successfully(spark, df):
+
+    columns_to_fill = ['id', 'id_2']
+    columns_with_new_names = list(zip(columns_to_fill, columns_to_fill))
+
+    result = da.Filler.fill(df, 'time', columns_with_new_names, strategy=da.Filler.ffill_windows)
     
     #debug
     df.show()
@@ -83,22 +104,16 @@ def test_fill_forwardfill_df_successfully(spark, df):
 
     assert result.count() == df.count()
 
-def test_fill_invalid_strategy_fails(spark, df):
+def _test_da_filler_fill_invalid_strategy_fails(spark, df):
+    columns_to_fill = ['id', 'id_2']
+    columns_with_new_names = list(zip(columns_to_fill, columns_to_fill))
+
     with pytest.raises(Exception):
-        uat = dataalignment.DataAlignmentUtil(SQLContext.getOrCreate(spark.sparkContext))
-        result = uat.fill(df, 'time', ['id', 'id_2'], strategy=None)
+        result = da.Filler.fill(df, 'time', columns_with_new_names, strategy=None)
 
-def test_fill_invalid_column_fails(spark, df):
+def _test_da_filler_fill_invalid_column_fails(spark, df):
+    columns_to_fill = ['id', 'unknown_column']
+    columns_with_new_names = list(zip(columns_to_fill, columns_to_fill))
+
     with pytest.raises(Exception):
-        uat = dataalignment.DataAlignmentUtil(SQLContext.getOrCreate(spark.sparkContext))
-        result = uat.fill(df, 'time', ['id', 'unknown_column'], strategy=uat.ffill_windows)
-
-def test_resample_dataframe_with_correct_number_of_rows(spark, df):
-    uat = dataalignment.DataAlignmentUtil(SQLContext.getOrCreate(spark.sparkContext))  
-    result = uat.resample(df, 'time', timezone='Europe/Vienna', step_size='500ms', join_tolerance = '180ms')
- 
-    df.show()
-    result.show()
-
-    assert result.count() == ((df.count()) * 2) - 1
-
+        result = da.Filler.fill(df, 'time', ['id', 'unknown_column'], strategy=da.Filler.ffill_windows)
